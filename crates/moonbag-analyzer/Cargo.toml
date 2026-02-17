@@ -1,0 +1,13 @@
+[package]
+name = "moonbag-analyzer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+moonbag-core = { workspace = true }
+rust_decimal = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+rust_decimal_macros = { workspace = true }

@@ -1,0 +1,26 @@
+[package]
+name = "moonbag-executor-bin"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "moonbag-executor"
+path = "src/main.rs"
+
+[dependencies]
+moonbag-core = { workspace = true }
+moonbag-contracts = { workspace = true }
+moonbag-executor = { workspace = true }
+moonbag-queue = { workspace = true }
+moonbag-notifier = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+dotenvy = { workspace = true }
+anyhow = { workspace = true }
+alloy = { workspace = true }
+rust_decimal = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

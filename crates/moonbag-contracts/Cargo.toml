@@ -1,0 +1,12 @@
+[package]
+name = "moonbag-contracts"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+moonbag-core = { workspace = true }
+alloy = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }

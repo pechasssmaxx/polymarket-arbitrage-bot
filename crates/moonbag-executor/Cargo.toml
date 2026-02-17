@@ -1,0 +1,24 @@
+[package]
+name = "moonbag-executor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+moonbag-core = { workspace = true }
+moonbag-contracts = { workspace = true }
+moonbag-queue = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+chrono = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+alloy = { workspace = true }
+hex = { workspace = true }
+rand = "0.8"

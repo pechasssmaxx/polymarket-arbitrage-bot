@@ -1,28 +1,273 @@
-# polymarket-arbitrage-bot
-it checks every market, spots the profit, automatically grabs the needed options, and hits convert
+# Polymarket Moonbag Scanner
 
-the alpha is that multi outcome markets have a negriskadapter contract, you will see it on the cup badge markets, and it allows you to flip your NO tokens back to usdc and grab free YES tokens on top
+Бот для арбитража на мультиисходных маркетах Polymarket. Сканирует ордербуки в реалтайме, находит возможности, и кидает алерты в Telegram.
 
-numbers example
+---
 
-5 option market, we buy NO on 3 picks k=3
-> NO #1 60¢  
-> NO #2 55¢  
-> NO #3 70¢
-one share costs 1.85$
+## Что это и зачем
 
-we give up 3 NO and get back 2 usdc plus 3 YES
+На Polymarket есть маркеты с кучей исходов. Например: "Кто станет президентом?" — 10 кандидатов. Или "Какой будет FDV у токена X?" — опции <100M, <200M, <400M, <700M, <1B и т.д.
 
-so how does it actually work?
+У каждого исхода есть YES и NO токены. YES = "случится", NO = "не случится".
 
-the bot connects to the polymarket websocket and listens to all orderbook updates in real time, every 5 minutes it refreshes the list of active markets
+**Ключевой момент:** на таких маркетах работает механизм CONVERT через NegRiskAdapter. Если ты купил NO токены на нескольких исходах — ты можешь конвертнуть их обратно в USDC + получить YES токены бесплатно.
 
-every time the orderbook moves the bot runs quickcheck, a 4 microsecond speed filter, it cuts off 99% of the markets where there is no edge at all
+Вот на этом и строится арбитраж.
 
-if quickcheck passes it calculates the real price based on orderbook depth, not just the best ask, but how much it actually costs to buy n shares, because there might be 1 share sitting at 50 cents and then a wall at 95
+---
 
-it loops through all outcome combinations, finds the optimal K for how many NO to buy and the best position size, then it runs a binary search on the size for each K
+## Как работает арбитраж (на пальцах)
 
-if you are interested i will drop trader examples and the bot in the comments
+Допустим маркет: "FDV FOGO после запуска" с 5 опциями:
+- \>$50M
+- \>$100M
+- \>$200M
+- \>$500M
+- \>$1B
 
-but always remember the risks
+Ты видишь что NO токены на 3 опции стоят дёшево:
+- NO на ">$500M" = 0.60$ (типа все думают что не дотянет)
+- NO на ">$1B" = 0.55$
+- NO на ">$200M" = 0.70$
+
+**Что делает бот:**
+
+1) Покупает NO на эти 3 исхода (K=3)
+2) Конвертит через NegRiskAdapter → получает **(K-1) = 2 USDC** за каждый шер обратно
+3) Бонусом получает YES токены на все 3 исхода — это и есть **мунбэги**
+
+**Математика на 10 шеров:**
+```
+Потратил:  0.60 * 10 + 0.55 * 10 + 0.70 * 10 = 18.50 USDC
+Получил:   (3-1) * 10 = 20.00 USDC
+Профит:    20.00 - 18.50 - газ ≈ 1.30 USDC
+```
+
+Плюс у тебя на руках YES токены. Если FDV реально будет >$500M — этот YES стоит $1. Ты получил его **бесплатно** (уже в плюсе от арбитража).
+
+---
+
+## Формула
+
+```
+profit = (K - 1) * amount - sum(NO_price[i] * amount) - gas
+```
+
+Порог безубыточности: **средняя цена NO < (K-1)/K**
+
+| K (сколько NO берём) | Макс. средняя цена NO | Пример |
+|---|---|---|
+| 2 | 0.50 (50¢) | Два NO по ~49¢ каждый |
+| 3 | 0.667 (66.7¢) | Три NO в среднем по ~65¢ |
+| 5 | 0.80 (80¢) | Пять NO в среднем по ~78¢ |
+| 10 | 0.90 (90¢) | Десять NO в среднем по ~89¢ |
+
+Чем больше K — тем легче найти прибыльную комбинацию, но тем больше капитала нужно.
+
+---
+
+## Что делает бот конкретно
+
+1. **Подключается к WebSocket** Polymarket и получает обновления ордербуков в реалтайме
+2. **Каждые 5 минут** обновляет список активных маркетов через Gamma API
+3. **Быстрый фильтр** — за микросекунды отсеивает маркеты где точно нет профита
+4. **Считает реальную цену** с учётом глубины стакана (не просто лучший аск, а сколько реально можно купить за нужный объём)
+5. **Находит оптимальный набор** — перебирает все комбинации исходов, ищет максимальный профит
+6. **Пишет в Telegram** — кидает алерт с деталями: какой маркет, какие исходы, сколько профита
+
+Бот **не торгует сам** в режиме `DRY_RUN=1` (по дефолту). Только сканирует и алертит.
+
+---
+
+## Быстрый старт
+
+### 1. Клонируем и собираем
+
+```bash
+git clone https://github.com/0xalexkxk/polymarket-arbitrage-convert.git
+cd polymarket-arbitrage-convert
+cargo build --release
+```
+
+Нужен Rust. Если нет — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+
+### 2. Настраиваем .env
+
+```bash
+cp .env.example .env
+```
+
+**Минимум для сканера (только мониторинг, без торговли):**
+
+```env
+# RPC нода Polygon (бесплатно на alchemy.com или infura.io)
+POLYGON_RPC_URL=https://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY
+
+# Режим — только сканирование
+MOONBAG_DRY_RUN=1
+
+# Telegram (опционально, но зачем без него)
+TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+TELEGRAM_CHAT_ID=-100123456789
+```
+
+**Для торговли (когда разберёшься как это работает):**
+
+```env
+# Приватный ключ EOA (который является овнером Safe)
+POLYGON_PRIVATE_KEY=your_private_key_hex
+
+# Адрес Gnosis Safe (Polymarket использует Safe кошельки)
+POLYMARKET_FUNDER=0xYourSafeAddress
+
+# API ключи от CLOB (получаешь через py-clob-client derive_api_key)
+POLYMARKET_API_KEY=
+POLYMARKET_API_SECRET=
+POLYMARKET_PASSPHRASE=
+```
+
+### 3. Запускаем
+
+```bash
+# Просто сканер (алерты в консоль)
+RUST_LOG=info ./target/release/moonbag-scanner
+
+# Сканер + Telegram алерты (два процесса)
+./target/release/moonbag-scanner --no-telegram &
+./target/release/moonbag-notifier &
+
+# Проверить что жив
+curl http://localhost:8080/health
+```
+
+---
+
+## Флаги запуска
+
+Бот управляется флагами командной строки + переменными окружения. Вот что тебе реально понадобится:
+
+### Флаги сканера (`moonbag-scanner`)
+
+| Флаг | Что делает |
+|---|---|
+| `--dry-run true/false` | Сухой прогон — только детектим, не торгуем. По дефолту `true` |
+| `--execute` | Включает исполнение — сканер нашёл возможность → сразу торгует |
+| `--once` | **Для тестирования.** Сканер находит первую возможность, исполняет её, и завершается. Идеально чтобы потестить что всё работает, не оставляя бота крутиться 24/7 |
+| `--no-telegram` | Не слать Telegram. Используй если запускаешь отдельный notifier процесс |
+| `--rest-only` | Не подключаться к WebSocket, только REST опрос. Проще для дебага |
+| `--skip-bootstrap` | Пропустить загрузку ордербуков на старте. Быстрее стартует, но первые секунды данных не будет |
+| `--scan-interval-ms N` | Как часто делать полный скан (мс). Дефолт 5000 |
+| `--gamma-refresh-secs N` | Как часто обновлять список маркетов. Дефолт 300 (5 мин) |
+| `--log-level LEVEL` | Уровень логов: `debug`, `info`, `warn`, `error` |
+| `--data-dir PATH` | Где хранить базу redb. Дефолт `./data` |
+
+### Примеры запуска
+
+```bash
+# Просто посмотреть что находит (ничего не торгует, пишет в консоль)
+./target/release/moonbag-scanner --dry-run true --log-level info
+
+# Тест-драйв: найти одну возможность, исполнить и выйти
+./target/release/moonbag-scanner --execute --once
+
+# Боевой режим 24/7
+./target/release/moonbag-scanner --execute --no-telegram &
+./target/release/moonbag-notifier &
+
+# Дебаг: только REST, подробные логи
+./target/release/moonbag-scanner --rest-only --log-level debug
+```
+
+### Флаги экзекутора (`moonbag-executor`)
+
+Экзекутор обычно запускается через сканер с `--execute`. Но можно и отдельно для тестов:
+
+| Флаг | Что делает |
+|---|---|
+| `--test-order` | Отправляет тестовый ордер по минимальной цене и сразу отменяет. Для проверки что API ключи работают |
+| `--test-token TOKEN_ID` | ID токена для тестового ордера |
+| `--test-price 0.01` | Цена тестового ордера (дефолт 0.01 — точно не исполнится) |
+| `--test-size 5.0` | Размер тестового ордера |
+| `--dry-run` | Не отправлять реальные ордера |
+
+```bash
+# Проверить что API ключи и подпись работают (ордер по 1 центу, сразу отменит)
+./target/release/moonbag-executor --test-order --test-token YOUR_TOKEN_ID
+```
+
+---
+
+## Переменные окружения
+
+| Переменная | Дефолт | Что делает |
+|---|---|---|
+| `MOONBAG_DRY_RUN` | `1` | 1 = только сканировать, 0 = торговать |
+| `MOONBAG_MIN_PROFIT` | `0.00` | Минимальный профит в USDC для алерта |
+| `MOONBAG_MAX_INVESTMENT` | `3000` | Максимум USDC на одну сделку |
+| `MOONBAG_MIN_K` | `2` | Минимум исходов для покупки |
+| `MOONBAG_MAX_K` | - | Максимум исходов (если не задан — без ограничений) |
+| `MOONBAG_TARGET_SIZE` | `10.0` | Целевой размер позиции в шерах |
+| `MOONBAG_MODE` | `profit` | `profit` = макс профит, `farm` = макс объём |
+| `MOONBAG_GAS_PRICE_GWEI` | `35` | Оценка газа для расчёта профита |
+| `MOONBAG_SKIP_PRECHECK` | `0` | 1 = пропустить проверку баланса перед торговлей |
+
+---
+
+## Архитектура
+
+Три процесса:
+
+**Scanner** — основной. WebSocket соединение с Polymarket, обновляет ордербуки, прогоняет анализ, пишет результаты в redb (встроенная БД).
+
+**Notifier** — читает из redb, дедуплицирует, форматирует, шлёт в Telegram. Отдельный процесс чтобы если Telegram API тупит — сканер не тормозил.
+
+**Executor** — покупает NO токены через CLOB API, ждёт сеттлмент, конвертит через NegRiskAdapter, продаёт YES если нужно. Это уже для реальной торговли.
+
+```
+Scanner ──(redb)──> Notifier ──> Telegram
+    │
+    └──(redb)──> Executor ──> CLOB API ──> Polygon
+```
+
+---
+
+## Структура проекта
+
+```
+crates/
+  moonbag-core/        # Конфиг, модели, ошибки
+  moonbag-analyzer/    # Фильтры, ценообразование, поиск возможностей
+  moonbag-scanner/     # WebSocket, ордербуки, Gamma API
+  moonbag-executor/    # Покупка, продажа, CONVERT
+  moonbag-contracts/   # Взаимодействие с контрактами (ERC1155, NegRisk)
+  moonbag-notifier/    # Telegram алерты
+bins/
+  scanner/             # Бинарник сканера
+  executor/            # Бинарник экзекутора
+  notifier/            # Бинарник нотификатора
+scripts/
+  convert_retry.py     # Python скрипт для CONVERT через relayer
+  convert_relayer.py   # Relayer для NegRiskAdapter транзакций
+```
+
+---
+
+## FAQ
+
+**Q: Это легально?**
+A: Да, это обычный арбитраж на публичном рынке. Ты покупаешь токены по рыночной цене и используешь контракт конвертации который доступен всем.
+
+**Q: Сколько можно заработать?**
+A: Зависит от рынка. Возможности появляются и исчезают. Когда рынок волатильный — чаще. В спокойные дни можешь ничего не поймать. Это не принтер денег, это инструмент который помогает заметить то что глазами не увидишь.
+
+**Q: Нужен депозит?**
+A: Для сканирования — нет, только бесплатная RPC нода. Для торговли — да, нужен USDC на Polygon в Gnosis Safe кошельке.
+
+**Q: Какие риски?**
+A: Газ на Polygon (копейки), проскальзывание (бот это учитывает при расчёте), баги в боте (поэтому `DRY_RUN=1` по дефолту). Начинай с `--once` чтобы потестить на одной сделке.
+
+---
+
+## Лицензия
+
+MIT — делайте что хотите, но на свой страх и риск. Это не финансовый совет.

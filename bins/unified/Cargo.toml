@@ -1,0 +1,23 @@
+[package]
+name = "moonbag-unified"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "moonbag"
+path = "src/main.rs"
+
+[dependencies]
+moonbag-core = { workspace = true }
+moonbag-analyzer = { workspace = true }
+moonbag-scanner = { workspace = true }
+moonbag-contracts = { workspace = true }
+moonbag-executor = { workspace = true }
+moonbag-queue = { workspace = true }
+moonbag-notifier = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+dotenvy = { workspace = true }
+anyhow = { workspace = true }
