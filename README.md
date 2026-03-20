@@ -1,7 +1,7 @@
 
 # Polymarket Moonbag Scanner
 
-An arbitrage bot for Polymarket multi-outcome (NegRisk) markets. It scans order books in real-time, identifies profitable opportunities, and sends alerts via Telegram.
+An arbitrage bot for Polymarket multi-outcome (NegRisk) markets. It scans order books in real-time, identifies profitable opportunities, and sends alerts via Telegram...
 
 ---
 
